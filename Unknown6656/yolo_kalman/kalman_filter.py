@@ -238,33 +238,3 @@ class SmoothingKalmanFilter:
             return tdiff * self.velocity * self.accuracy + self.position
 
 
-
-import cv2
-import random
-
-
-ITER = 500
-CONFS = .05, .95
-CONF_COUNT = 7
-VAL = 5
-
-skfs = [
-    (CONFS[0] + (CONFS[1] - CONFS[0]) * i / (CONF_COUNT - 1.), SmoothingKalmanFilter(1))
-    for i in range(CONF_COUNT)
-]
-csv = f'iter,val,{",".join(f":est-{c}" for c,_ in skfs)}\n'
-
-for i in range(ITER):
-    VAL += random.random() - .5
-    csv += f'{i:>6},{VAL:>20}'
-
-    for conf, skf in skfs:
-        skf.update(np.array([VAL]), np.array([conf]))
-        est = skf.estimate_position()[0]
-        csv += f',{est}'
-        print(skf, end='\r')
-
-    csv += '\n'
-
-with open(f'eval.csv', 'w') as f:
-    f.write(csv)
