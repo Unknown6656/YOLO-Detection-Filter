@@ -161,7 +161,7 @@ class SmoothingKalmanFilter:
     timestamp : float
     velocity : np.ndarray
     position : np.ndarray
-    min_accuracy : float = .1
+    min_accuracy : float = .01
     variance : np.ndarray
 
 
@@ -213,18 +213,18 @@ class SmoothingKalmanFilter:
         elif timestamp < self.timestamp:
             raise ValueError(f'The given timestamp ({timestamp}) must be newer than the current timestamp ({self.timestamp}).')
         else:
-            accuracy = np.array([max(x, self.min_accuracy) for x in accuracy])
+            accuracy = np.array([min(max(x, self.min_accuracy, 0.), 1.) for x in accuracy])
 
             if any(x < 0. for x in self.variance):
                 self.force_state(position, self.velocity, accuracy, timestamp)
             else:
                 if (tdiff := timestamp - self.timestamp) > 0:
-                    self.variance += tdiff * self.Q ** 2 / 1000.
+                    self.variance += tdiff * self.Q * self.Q
                     self.timestamp = timestamp
                     self.velocity = position - self.position
 
                 # kalman gain matrix K
-                K = self.variance / (self.variance + self.accuracy ** 2)
+                K = self.variance / (self.variance + (1 - accuracy) ** 2)
 
                 self.position += self.velocity * K
                 self.variance *= 1 - K
@@ -232,27 +232,39 @@ class SmoothingKalmanFilter:
     def estimate_position(self, timestamp : float | None = None) -> np.ndarray | None:
         timestamp = timestamp or time.time()
 
-        if timestamp < self.timestamp:
+        if (tdiff := timestamp - self.timestamp) < 0:
             raise ValueError(f'The given timestamp ({timestamp}) must be newer than the current timestamp ({self.timestamp}).')
         else:
-            return (timestamp - self.timestamp) * self.velocity * self.accuracy + self.position
+            return tdiff * self.velocity * self.accuracy + self.position
 
 
 
 import cv2
 import random
 
-skf = SmoothingKalmanFilter(1)
-vals = []
-x = 10
 
-for i in range(1000):
-    x += (random.random() - .5) * .4
+ITER = 500
+CONFS = .05, .95
+CONF_COUNT = 7
+VAL = 5
 
+skfs = [
+    (CONFS[0] + (CONFS[1] - CONFS[0]) * i / (CONF_COUNT - 1.), SmoothingKalmanFilter(1))
+    for i in range(CONF_COUNT)
+]
+csv = f'iter,val,{",".join(f":est-{c}" for c,_ in skfs)}\n'
 
+for i in range(ITER):
+    VAL += random.random() - .5
+    csv += f'{i:>6},{VAL:>20}'
 
-for m in measurements:
-    skf.update(m, np.array([.8]))
-    time.sleep(.01)
-    pos = skf.estimate_position()
-    print(skf)
+    for conf, skf in skfs:
+        skf.update(np.array([VAL]), np.array([conf]))
+        est = skf.estimate_position()[0]
+        csv += f',{est}'
+        print(skf, end='\r')
+
+    csv += '\n'
+
+with open(f'eval.csv', 'w') as f:
+    f.write(csv)
