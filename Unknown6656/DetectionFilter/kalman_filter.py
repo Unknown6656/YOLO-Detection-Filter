@@ -163,6 +163,7 @@ class SmoothingKalmanFilter:
     position : np.ndarray
     min_accuracy : float = .01
     variance : np.ndarray
+    jreset : bool = False
 
 
     def __init__(self, dim : int, q : float = 1.):
@@ -187,6 +188,7 @@ class SmoothingKalmanFilter:
             np.zeros(self.dimension),
             np.zeros(self.dimension)
         )
+        self.jreset = True
 
     def force_state(self, position : np.ndarray, velocity : np.ndarray, accuracy : np.ndarray, timestamp : float | None = None) -> None:
         timestamp = timestamp or time.time()
@@ -215,7 +217,7 @@ class SmoothingKalmanFilter:
         else:
             accuracy = np.array([min(max(x, self.min_accuracy, 0.), 1.) for x in accuracy])
 
-            if any(x < 0. for x in self.variance):
+            if any(x < 0. for x in self.variance) or self.jreset:
                 self.force_state(position, self.velocity, accuracy, timestamp)
             else:
                 if (tdiff := timestamp - self.timestamp) > 0:
@@ -229,12 +231,12 @@ class SmoothingKalmanFilter:
                 self.position += self.velocity * K
                 self.variance *= 1 - K
 
-    def estimate_position(self, timestamp : float | None = None) -> np.ndarray | None:
+            self.jreset = False
+
+    def estimate_position(self, timestamp : float | None = None) -> np.ndarray:
         timestamp = timestamp or time.time()
 
         if (tdiff := timestamp - self.timestamp) < 0:
             raise ValueError(f'The given timestamp ({timestamp}) must be newer than the current timestamp ({self.timestamp}).')
         else:
             return tdiff * self.velocity * self.accuracy + self.position
-
-
